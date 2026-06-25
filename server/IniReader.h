@@ -37,7 +37,7 @@ public:
     virtual std::string readStringEntry(const std::string& section, const std::string& entry, bool config = false) = 0;
     virtual QWORD readIntegerEntry(const std::string& section, const std::string& entry, bool config = false) = 0;
     virtual bool writeStringEntry(const std::string& section, const std::string& entry, const std::string& value, bool config = false) = 0;
-    virtual std::string readEscapeStrings(const std::string& section, const std::string& entry) = 0;
+    virtual std::string readEscapeStrings(const std::string& section, const std::string& entry, bool config = false) = 0;
 };
 
 // IniReader class that implements the IniReaderInterface
@@ -51,7 +51,7 @@ public:
     void openFile(const std::string& filename) override;
     void openConfigFile(const std::string& filename) override;
     std::string readStringEntry(const std::string& section, const std::string& entry, bool config = false) override;
-    std::string readEscapeStrings(const std::string& section, const std::string& entry) override;
+    std::string readEscapeStrings(const std::string& section, const std::string& entry, bool config = false) override;
     QWORD readIntegerEntry(const std::string& section, const std::string& entry, bool config = false) override;
     bool writeStringEntry(const std::string& section, const std::string& entry, const std::string& value, bool config = false) override;
 

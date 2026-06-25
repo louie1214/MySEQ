@@ -73,11 +73,12 @@ std::string IniReader::readStringEntry(const std::string& section, const std::st
     return result;
 }
 
-std::string IniReader::readEscapeStrings(const std::string& section, const std::string& entry) {
+std::string IniReader::readEscapeStrings(const std::string& section, const std::string& entry, bool config) {
     TCHAR newbuff[1024];
     std::string result;
+    std::string file = config ? configfilename : filename;
 
-    if (GetPrivateProfileString(section.c_str(), entry.c_str(), "", newbuff, sizeof(newbuff), configfilename.c_str()) > 0) {
+    if (GetPrivateProfileString(section.c_str(), entry.c_str(), "", newbuff, sizeof(newbuff), file.c_str()) > 0) {
         std::string in(newbuff);
         std::string out;
         bool inescape = false;

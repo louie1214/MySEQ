@@ -354,9 +354,9 @@ void EQGameScanner::updateFileInfoSection(std::ostringstream& outputStream, IniR
 
 QWORD EQGameScanner::findAndProcessOffset(HWND hDlg, const std::string& section, const std::string& entry, IniReaderInterface* ir_intf, NetworkServerInterface* net_intf, std::ostringstream& outputStream, bool write_out)
 {
-	DWORD mystart = (DWORD)ir_intf->readIntegerEntry(section.c_str(), entry.c_str(), true);
+	DWORD mystart = (DWORD)ir_intf->readIntegerEntry(section.c_str(), entry.c_str());
 	std::string mypattern = ir_intf->readEscapeStrings(section.c_str(), "Pattern");
-	std::string mymask = ir_intf->readStringEntry(section.c_str(), "Mask", true);
+	std::string mymask = ir_intf->readStringEntry(section.c_str(), "Mask");
 
 	QWORD matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 	outputStream << section << "=0x" << std::hex << matchAddr;
@@ -426,9 +426,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	string mypattern;
 	string mymask;
 
-	mystart = (DWORD)ir_intf->readIntegerEntry("CharInfo", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("CharInfo", "Start");
 	mypattern = ir_intf->readEscapeStrings("CharInfo", "Pattern");
-	mymask = ir_intf->readStringEntry("CharInfo", "Mask", true);
+	mymask = ir_intf->readStringEntry("CharInfo", "Mask");
 
 	// CharInfo
 	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
@@ -448,9 +448,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = 0;
 
 	// SpawnInfo::NextOffset
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoNextOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoNextOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoNextOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoNextOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoNextOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -461,9 +461,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::PrevOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoPrevOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoPrevOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoPrevOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoPrevOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoPrevOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -474,9 +474,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::LastnameOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoLastnameOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoLastnameOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoLastnameOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoLastnameOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoLastnameOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -487,9 +487,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::XOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoXOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoXOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoXOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoXOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoXOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -500,9 +500,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::YOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoYOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoYOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoYOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoYOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoYOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -513,9 +513,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::ZOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoZOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoZOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoZOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoZOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoZOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -526,9 +526,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::SpeedOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoSpeedOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoSpeedOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoSpeedOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoSpeedOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoSpeedOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -539,9 +539,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::HeadingOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoHeadingOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoHeadingOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoHeadingOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoHeadingOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoHeadingOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -552,9 +552,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::NameOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoNameOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoNameOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoNameOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoNameOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoNameOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -565,9 +565,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::TypeOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoTypeOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoTypeOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoTypeOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoTypeOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoTypeOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -578,9 +578,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::SpawnIDOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoSpawnIDOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoSpawnIDOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoSpawnIDOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoSpawnIDOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoSpawnIDOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -591,9 +591,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::OwnerIDOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoOwnerIDOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoOwnerIDOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoOwnerIDOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoOwnerIDOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoOwnerIDOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -604,9 +604,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::HideOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoHideOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoHideOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoHideOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoHideOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoHideOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -617,9 +617,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::Prev
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoLevelOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoLevelOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoLevelOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoLevelOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoLevelOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -630,9 +630,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::Prev
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoRaceOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoRaceOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoRaceOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoRaceOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoRaceOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -643,9 +643,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::ClassOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoClassOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoClassOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoClassOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoClassOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoClassOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -656,9 +656,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::PrimaryOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoPrimaryOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoPrimaryOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoPrimaryOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoPrimaryOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoPrimaryOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
@@ -669,9 +669,9 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	// SpawnInfo::OffhandOffset
 	matchAddr = 0;
-	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoOffhandOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoOffhandOffset", "Start");
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoOffhandOffset", "Pattern");
-	mymask = ir_intf->readStringEntry("SpawnInfoOffhandOffset", "Mask", true);
+	mymask = ir_intf->readStringEntry("SpawnInfoOffhandOffset", "Mask");
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
