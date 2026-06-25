@@ -43,12 +43,23 @@ public:
 	void ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, NetworkServerInterface* net_intf);
 
 private:
+	struct PESection {
+		DWORD rawOff;
+		DWORD rawSize;
+		DWORD virtOff;
+	};
+
 	bool compareData(PBYTE data, PBYTE byteMask, PCHAR charMask);
 	void updateFileInfoSection(std::ostringstream& outputStream, IniReaderInterface* ir_intf, bool write_out);
 	QWORD findAndProcessOffset(HWND hDlg, const std::string& section, const std::string& entry, IniReaderInterface* ir_intf, NetworkServerInterface* net_intf, std::ostringstream& outputStream, bool write_out);
 	void handleMatchResult(HWND hDlg, QWORD matchAddr, NetworkServerInterface* net_intf, int offsetType, const std::string& offsetName, IniReaderInterface* ir_intf, std::ostringstream& outputStream, bool write_out, bool& reload);
 
-	std::string executablePath;
+	bool parsePESections();
+	DWORD fileOffsetToRVA(DWORD fileOffset) const;
+
+	std::string           executablePath;
+	QWORD                 m_imageBase = 0;
+	std::vector<PESection> m_sections;
 };
 
 #endif // EQGAMESCANNER_H

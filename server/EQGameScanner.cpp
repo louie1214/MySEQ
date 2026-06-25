@@ -58,6 +58,75 @@ EQGameScanner::EQGameScanner(void) {}
 
 EQGameScanner::~EQGameScanner(void) {}
 
+// ---------------------------------------------------------------------------
+// PE helpers — parse section table once per exe path change
+// ---------------------------------------------------------------------------
+
+bool EQGameScanner::parsePESections()
+{
+	m_sections.clear();
+	m_imageBase = 0;
+
+	std::ifstream f(executablePath.c_str(), std::ios::binary);
+	if (!f)
+		return false;
+
+	// MZ header
+	WORD mz = 0;
+	f.read(reinterpret_cast<char*>(&mz), 2);
+	if (mz != 0x5A4D)
+		return false;
+
+	// e_lfanew
+	f.seekg(0x3C);
+	DWORD peOff = 0;
+	f.read(reinterpret_cast<char*>(&peOff), 4);
+
+	// PE signature
+	f.seekg(peOff);
+	DWORD sig = 0;
+	f.read(reinterpret_cast<char*>(&sig), 4);
+	if (sig != 0x00004550)  // "PE\0\0"
+		return false;
+
+	// COFF header
+	WORD numSections = 0, optHdrSize = 0;
+	f.seekg(peOff + 6);
+	f.read(reinterpret_cast<char*>(&numSections), 2);
+	f.seekg(peOff + 20);
+	f.read(reinterpret_cast<char*>(&optHdrSize), 2);
+
+	// Optional header: ImageBase at offset 24 from start of optional header (PE64)
+	f.seekg(peOff + 24 + 24);
+	f.read(reinterpret_cast<char*>(&m_imageBase), 8);
+
+	// Section table
+	DWORD secTableOff = peOff + 24 + optHdrSize;
+	for (WORD i = 0; i < numSections; ++i)
+	{
+		f.seekg(secTableOff + i * 40);
+		char nameBuf[9] = {};
+		f.read(nameBuf, 8);
+		DWORD virtSize = 0, virtOff = 0, rawSize = 0, rawOff = 0;
+		f.read(reinterpret_cast<char*>(&virtSize), 4);
+		f.read(reinterpret_cast<char*>(&virtOff),  4);
+		f.read(reinterpret_cast<char*>(&rawSize),  4);
+		f.read(reinterpret_cast<char*>(&rawOff),   4);
+		m_sections.push_back({ rawOff, rawSize, virtOff });
+	}
+	return true;
+}
+
+DWORD EQGameScanner::fileOffsetToRVA(DWORD fileOffset) const
+{
+	for (const auto& s : m_sections)
+	{
+		if (fileOffset >= s.rawOff && fileOffset < s.rawOff + s.rawSize)
+			return s.virtOff + (fileOffset - s.rawOff);
+	}
+	return 0;
+}
+
 void EQGameScanner::setExe(TCHAR* str)
 {
 	executablePath = str;
@@ -84,8 +153,15 @@ QWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 	if (!file)
 		return 0;
 
+	std::string maskStr(charMask);
+
+	// Detect RIP-relative mode: mask contains 'r' characters (4-byte displacement).
+	// In this mode we wildcard the displacement bytes and compute the resolved VA as:
+	//   IMAGE_BASE + fileOffsetToRVA(match_file_off + r_pos + 4) + (int32_t)disp32
+	bool ripMode = (maskStr.find('r') != std::string::npos);
+
 	int typelen = 0;
-	typelen = (int)std::string(charMask).find_last_of("t") - (int)std::string(charMask).find_first_of("t") + 1;
+	typelen = (int)maskStr.find_last_of("t") - (int)maskStr.find_first_of("t") + 1;
 
 	if (typelen < 1)
 		typelen = 4;
@@ -103,25 +179,40 @@ QWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 	{
 		if (compareData(buffer.data() + i, byteMask, charMask))
 		{
-			QWORD checkRet = 0;
 			matchAddr = i;
-			if (typelen == 1) {
-				checkRet = *reinterpret_cast<PBYTE>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
+
+			if (ripMode)
+			{
+				// Validate by computing the resolved VA and checking it looks like an x64 address.
+				size_t rPos = maskStr.find_first_of("r");
+				int32_t disp32 = *reinterpret_cast<int32_t*>(buffer.data() + matchAddr + rPos);
+				DWORD nextInstrFileOff = startAddress + (DWORD)matchAddr + (DWORD)rPos + 4;
+				if (m_sections.empty())
+					parsePESections();
+				DWORD nextInstrRVA = fileOffsetToRVA(nextInstrFileOff);
+				if (nextInstrRVA == 0) { matchAddr = 0; continue; }
+				QWORD resolvedVA = m_imageBase + nextInstrRVA + (int64_t)disp32;
+				if (resolvedVA >= 0x100000000ULL)
+					break;
 			}
-			else if (typelen == 2) {
-				checkRet = *reinterpret_cast<PWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-			}
-			else if (typelen == 8) {
-				checkRet = *reinterpret_cast<PQWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-			}
-			else {
-				checkRet = *reinterpret_cast<PDWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-			}
-			// x64 EQ addresses are >= 4GB; x86 EQ addresses were < 512MB
-			if ((typelen >= 8 && checkRet >= 0x100000000ULL) || (typelen < 8 && checkRet < 536870912))
-				break;
 			else
-				matchAddr = 0;
+			{
+				QWORD checkRet = 0;
+				if (typelen == 1)
+					checkRet = *reinterpret_cast<PBYTE>(buffer.data() + matchAddr + maskStr.find_first_of("t"));
+				else if (typelen == 2)
+					checkRet = *reinterpret_cast<PWORD>(buffer.data() + matchAddr + maskStr.find_first_of("t"));
+				else if (typelen == 8)
+					checkRet = *reinterpret_cast<PQWORD>(buffer.data() + matchAddr + maskStr.find_first_of("t"));
+				else
+					checkRet = *reinterpret_cast<PDWORD>(buffer.data() + matchAddr + maskStr.find_first_of("t"));
+
+				// x64 EQ addresses are >= 4GB; x86 EQ addresses were < 512MB
+				if ((typelen >= 8 && checkRet >= 0x100000000ULL) || (typelen < 8 && checkRet < 536870912))
+					break;
+			}
+
+			matchAddr = 0;
 		}
 	}
 
@@ -132,21 +223,27 @@ QWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 	if (matchAddr == 0)
 		return 0;
 
-	QWORD nRet;
+	// RIP-relative: compute IMAGE_BASE + rva(next_instr) + disp32
+	if (ripMode)
+	{
+		size_t rPos = maskStr.find_first_of("r");
+		int32_t disp32 = *reinterpret_cast<int32_t*>(buffer.data() + matchAddr + rPos);
+		DWORD nextInstrFileOff = startAddress + (DWORD)matchAddr + (DWORD)rPos + 4;
+		DWORD nextInstrRVA = fileOffsetToRVA(nextInstrFileOff);
+		if (nextInstrRVA == 0) return 0;
+		return m_imageBase + nextInstrRVA + (int64_t)disp32;
+	}
 
-	// Find where our target address we're searching for is stored, and return its value.
-	if (typelen == 1) {
-		nRet = *reinterpret_cast<PBYTE>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-	}
-	else if (typelen == 2) {
-		nRet = *reinterpret_cast<PWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-	}
-	else if (typelen == 8) {
-		nRet = *reinterpret_cast<PQWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-	}
-	else {
-		nRet = *reinterpret_cast<PDWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-	}
+	// Legacy: read the direct value at the 't' position
+	QWORD nRet;
+	if (typelen == 1)
+		nRet = *reinterpret_cast<PBYTE>(buffer.data() + matchAddr + maskStr.find_first_of("t"));
+	else if (typelen == 2)
+		nRet = *reinterpret_cast<PWORD>(buffer.data() + matchAddr + maskStr.find_first_of("t"));
+	else if (typelen == 8)
+		nRet = *reinterpret_cast<PQWORD>(buffer.data() + matchAddr + maskStr.find_first_of("t"));
+	else
+		nRet = *reinterpret_cast<PDWORD>(buffer.data() + matchAddr + maskStr.find_first_of("t"));
 
 	return nRet;
 }
