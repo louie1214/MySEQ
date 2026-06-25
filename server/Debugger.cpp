@@ -109,13 +109,22 @@ void Debugger::enterDebugLoop(MemReaderInterface* mr_intf, IniReaderInterface* i
 
 	init(ir_intf);
 
-	printMenu();
+	if (pipeMode) {
+		cout << "---MYSEQ-READY---" << endl;
+	} else {
+		printMenu();
+	}
 
 	while (1)
 	{
-		cout << " > ";
+		if (!pipeMode) {
+			cout << " > ";
+		}
+		cout.flush();
 
-		getline(cin, userInput);
+		if (!getline(cin, userInput)) {
+			break;  // pipe closed or stdin EOF
+		}
 
 		if (userInput.compare(0, 1, "?") == 0)
 			printMenu();
@@ -167,6 +176,8 @@ void Debugger::enterDebugLoop(MemReaderInterface* mr_intf, IniReaderInterface* i
 			walkSpawnList(mr_intf, OT_self, true);
 		else if (userInput.compare(0, 2, "wt") == 0)
 			walkSpawnList(mr_intf, OT_target, true);
+		else if (userInput.compare(0, 3, "sph") == 0)
+			walkSpawnList(mr_intf, OT_target, true, false);
 		else if (userInput.compare(0, 2, "vs") == 0)
 			walkSpawnList(mr_intf, OT_self, false);
 		else if (userInput.compare(0, 2, "vt") == 0)
@@ -178,7 +189,12 @@ void Debugger::enterDebugLoop(MemReaderInterface* mr_intf, IniReaderInterface* i
 		else
 			cout << " Invalid selection. Please try again." << endl;
 
-		cout << "    ?) display main menu" << endl;
+		cout.flush();
+		if (pipeMode) {
+			cout << "---MYSEQ-END---" << endl;
+		} else {
+			cout << "    ?) display main menu" << endl;
+		}
 	}
 }
 
@@ -444,9 +460,10 @@ void Debugger::processSpawn(MemReaderInterface* mr_intf, offset_types ot)
 	DISPLAY_SPAWN_ITEM(OT_offhand, offhand);
 }
 
-void Debugger::walkSpawnList(MemReaderInterface* mr_intf, offset_types ot, bool reverse)
+void Debugger::walkSpawnList(MemReaderInterface* mr_intf, offset_types ot, bool reverse, bool verbose)
 {
 	QWORD pMem, pPrev, pNext, spawnCount;
+	QWORD limit = verbose ? 1000 : 10000;
 
 	pMem = mr_intf->extractRAWPointer(offsets[ot]);
 
@@ -469,10 +486,13 @@ void Debugger::walkSpawnList(MemReaderInterface* mr_intf, offset_types ot, bool 
 
 	spawnCount = 0;
 
-	if (reverse)
-		cout << " Walking spawnlist in reverse." << endl;
-	else
-		cout << " Walking spawnlist forward." << endl;
+	if (verbose)
+	{
+		if (reverse)
+			cout << " Walking spawnlist in reverse." << endl;
+		else
+			cout << " Walking spawnlist forward." << endl;
+	}
 
 	do
 	{
@@ -487,13 +507,16 @@ void Debugger::walkSpawnList(MemReaderInterface* mr_intf, offset_types ot, bool 
 
 		spawnCount++;
 
-		// Display a small amount of information about this spawn
-		cout << "    -----------------------------------" << endl;
+		if (verbose)
+		{
+			// Display a small amount of information about this spawn
+			cout << "    -----------------------------------" << endl;
 
-		DISPLAY_SPAWN_ITEM(OT_name, name);
-		cout << "    " << spawnParser.ptrNames[spawnParser.OT_id] << " -> " << dec << (UINT)spawnParser.tempNetBuffer.id << endl;
-		cout << "    " << spawnParser.ptrNames[spawnParser.OT_prev] << " -> 0x" << hex << pPrev << endl;
-		cout << "    " << spawnParser.ptrNames[spawnParser.OT_next] << " -> 0x" << hex << pNext << endl;
+			DISPLAY_SPAWN_ITEM(OT_name, name);
+			cout << "    " << spawnParser.ptrNames[spawnParser.OT_id] << " -> " << dec << (UINT)spawnParser.tempNetBuffer.id << endl;
+			cout << "    " << spawnParser.ptrNames[spawnParser.OT_prev] << " -> 0x" << hex << pPrev << endl;
+			cout << "    " << spawnParser.ptrNames[spawnParser.OT_next] << " -> 0x" << hex << pNext << endl;
+		}
 
 		// Walk up the list until we reach the beginning
 		if ((reverse && pPrev) || (!reverse && pNext))
@@ -511,13 +534,13 @@ void Debugger::walkSpawnList(MemReaderInterface* mr_intf, offset_types ot, bool 
 				pMem = 0;
 			}
 		}
-	} while (((!reverse && pNext) || (reverse && pPrev)) && (spawnCount < 1000));
+	} while (((!reverse && pNext) || (reverse && pPrev)) && (spawnCount < limit));
 
 	cout << " Discovered " << dec << spawnCount << " spawn entities during the walk." << endl;
 
 	if (reverse)
-		if (pPrev != 0)
-			scanForPtr(mr_intf, pMem, 0x140000000, 0x1800000);
+		if (pPrev == 0)
+			scanForPtr(mr_intf, pMem, mr_intf->getCurrentBaseAddress(), 0x4000000);
 }
 
 void Debugger::scanForPtr(MemReaderInterface* mr_intf, QWORD pSearch, QWORD pStart, QWORD size)
@@ -529,7 +552,7 @@ void Debugger::scanForPtr(MemReaderInterface* mr_intf, QWORD pSearch, QWORD pSta
 
 	cout << " Scanning for 0x" << hex << pSearch << " from 0x" << (pStart) << " to 0x" << (pStart + size) << endl;
 
-	for (pMem = pStart; pMem < (pStart + size); pMem += 1)
+	for (pMem = pStart; pMem < (pStart + size); pMem += 8)
 	{
 		if (!(mr_intf->extractToBuffer(pMem, (char*)&pExtracted, sizeof(pExtracted))))
 		{

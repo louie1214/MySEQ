@@ -570,12 +570,16 @@ namespace myseq
 
         private void GetMobOwner(Spawninfo si, Spawninfo mob)
         {
+            if (mob.Hide != si.Hide)
+            {
+                mob.Hide = si.Hide;
+                mob.listitem.SubItems[9].Text = si.Hide.GetHideStatus();
+            }
+
             if (mob.OwnerID != 0)
             {
                 mob.OwnerID = si.OwnerID;
                 MobHasOwner(mob);
-                mob.Hide = si.Hide;
-                mob.listitem.SubItems[9].Text = si.Hide.GetHideStatus();
             }
         }
 

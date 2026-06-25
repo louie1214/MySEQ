@@ -370,17 +370,19 @@ int APIENTRY _tWinMain(_In_   HINSTANCE hInstance,
 		return FALSE;
 	}
 
-	if (argc > 1 && (!console_mode && !debug_mode && !services && !otherini))
+	if (argc > 1 && (!console_mode && !debug_mode && !pipe_mode && !services && !otherini))
 	{
 		string arg = argv[1];
 
 		cout << "   Usage: server debug" << endl;
 		cout << "          server console" << endl;
+		cout << "          server pipe" << endl;
 		cout << "          server -f [IniFileName]" << endl;
 		cout << "          server -i" << endl;
 		cout << "          server -d" << endl << endl;
 		cout << "      debug - enter debug command line interface" << endl << endl;
 		cout << "      console - run server as a console" << endl << endl;
+		cout << "      pipe  - debug mode with stdin/stdout pipes (for offset_wizard)" << endl << endl;
 		cout << "      -f   - Load alternate Ini FileName" << endl << endl;
 		cout << "      -i   - Install server.exe as a service" << endl << endl;
 		cout << "      -d   - Removed MySEQ server.exe which was installed as service." << endl << endl;
@@ -410,7 +412,7 @@ int APIENTRY _tWinMain(_In_   HINSTANCE hInstance,
 	if (h_MySEQServer)
 		netServer.h_MySEQServer = h_MySEQServer;
 
-	if (!debug_mode) {
+	if (!debug_mode && !pipe_mode) {
 		netServer.init(&iniReader);
 
 		running = netServer.openListenerSocket(false);
@@ -433,11 +435,16 @@ int APIENTRY _tWinMain(_In_   HINSTANCE hInstance,
 
 	hAccelTable = LoadAccelerators(hInst, MAKEINTRESOURCE(IDC_MYSEQSERVER));
 
-	// debug runs the debug console in a new thread
-	if (debug_mode) {
-		cout << "========================" << endl <<
-			" MySEQ Server Debug Mode" << endl <<
-			"========================" << endl << endl;
+	// debug and pipe modes run the debug loop in a new thread
+	if (debug_mode || pipe_mode) {
+		if (!pipe_mode) {
+			cout << "========================" << endl <<
+				" MySEQ Server Debug Mode" << endl <<
+				"========================" << endl << endl;
+		}
+		if (pipe_mode) {
+			debugger.setPipeMode(true);
+		}
 		memReader.openFirstProcess("eqgame");
 		_beginthread(DoDebugLoop, 0, NULL);
 	}
@@ -452,8 +459,8 @@ int APIENTRY _tWinMain(_In_   HINSTANCE hInstance,
 		}
 	}
 
-	// debug never opens a listener socket
-	if (!debug_mode) {
+	// debug and pipe modes never open a listener socket
+	if (!debug_mode && !pipe_mode) {
 		netServer.closeClientSocket();
 
 		netServer.closeListenerSocket();
@@ -572,7 +579,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 	// We are running a modeless dialog attached to the parent main window which is hidden.
 	// We use the main window for network communictions
-	if (!console_mode && !debug_mode) {
+	if (!console_mode && !debug_mode && !pipe_mode) {
 		h_MySEQServer = CreateDialog(hInstance, MAKEINTRESOURCE(IDD_SERVERBOX), hWnd, ServerDialog);
 	}
 
@@ -586,8 +593,9 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	SetWindowLong(h_MySEQServer, GWL_EXSTYLE, dwNewStyle);
 	SetWindowPos(h_MySEQServer, NULL, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE);
 
-	// for debug mode, we open a console for use
-	if (debug_mode || console_mode) {
+	// for debug/console mode, open a new console and redirect stdio to it
+	// pipe mode skips this so stdin/stdout remain connected to the parent process pipes
+	if ((debug_mode || console_mode) && !pipe_mode) {
 		AllocConsole();
 		// Redirect the streams to the console
 		FILE* stream;
@@ -651,7 +659,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 		SetWindowText(h_MySEQServer, thisfilename);
 	}
 
-	if (debug_mode || console_mode) {
+	if ((debug_mode || console_mode) && !pipe_mode) {
 		SendMessage(h_MyConsole, WM_SETICON, ICON_SMALL, (LPARAM)LoadIcon(hInstance, MAKEINTRESOURCE(IDI_MYSEQSERVER)));
 		SendMessage(h_MyConsole, WM_SETICON, ICON_BIG, (LPARAM)LoadIcon(hInstance, MAKEINTRESOURCE(IDI_MYSEQSERVER)));
 
@@ -1161,6 +1169,8 @@ void ReadArgs(int argc, char* argv[])
 #endif
 
 	console_mode = (arg == "console");
+
+	pipe_mode = (arg == "pipe");
 
 	services = (arg == "-k");
 

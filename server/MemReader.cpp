@@ -173,7 +173,14 @@ bool MemReader::openProcess(string filename, bool first, bool debug)
 
 					currentEQProcessHandle = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, currentEQProcessID);
 
-					currentEQProcessBaseAddress = GetModuleBaseAddress(pe32.th32ProcessID, pe32.szExeFile);
+					QWORD detectedBase = GetModuleBaseAddress(pe32.th32ProcessID, pe32.szExeFile);
+					if (detectedBase != 0)
+						currentEQProcessBaseAddress = detectedBase;
+					else
+					{
+						currentEQProcessBaseAddress = 0x140000000;
+						cout << "MemReader: Warning - could not detect base address for '" << pe32.szExeFile << "', assuming 0x140000000" << endl;
+					}
 
 					originalFilename = procExe;
 

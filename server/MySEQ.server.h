@@ -32,6 +32,7 @@ using namespace std;
 
 bool debug_mode;
 bool console_mode;
+bool pipe_mode;
 bool services;
 
 bool otherini;

@@ -318,9 +318,9 @@ void NetworkServer::enterReceiveLoop(MemReaderInterface* mr_intf)
 	}
 }
 
-UINT NetworkServer::current_offset(int type)
+QWORD NetworkServer::current_offset(int type)
 {
-	return (UINT)offsets[(offset_types)type];
+	return offsets[(offset_types)type];
 }
 
 bool NetworkServer::processReceivedData(MemReaderInterface* mr_intf)

@@ -58,7 +58,7 @@ private:
 
 	void processSpawn(MemReaderInterface* mr_intf, offset_types ot);
 
-	void walkSpawnList(MemReaderInterface* mr_intf, offset_types ot, bool reverse);
+	void walkSpawnList(MemReaderInterface* mr_intf, offset_types ot, bool reverse, bool verbose = true);
 
 	void scanForPtr(MemReaderInterface* mr_intf, QWORD pSearch, QWORD pStart, QWORD size);
 
@@ -91,6 +91,11 @@ private:
 public:
 	Debugger();
 
+	void setPipeMode(bool v) { pipeMode = v; }
+
 	void enterDebugLoop(MemReaderInterface* mr_intf, IniReaderInterface* ir_intf);
 	void displayOffsetsSection(const string& sectionTitle, const vector<string>& names, const vector<QWORD>& offsets);
+
+private:
+	bool pipeMode = false;
 };

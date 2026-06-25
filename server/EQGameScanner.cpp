@@ -76,13 +76,13 @@ bool EQGameScanner::executableExists() const
 	return false;
 }
 
-DWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSize, const PBYTE byteMask, const PCHAR charMask)
+QWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSize, const PBYTE byteMask, const PCHAR charMask)
 {
 	std::ifstream file(executablePath.c_str(), std::ios::in | std::ios::binary);
 
 	// If the file can't be opened, return NULL for pointer offset.
 	if (!file)
-		return NULL;
+		return 0;
 
 	int typelen = 0;
 	typelen = (int)std::string(charMask).find_last_of("t") - (int)std::string(charMask).find_first_of("t") + 1;
@@ -92,7 +92,7 @@ DWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 
 	// Setup our temporary storage variables
 	std::vector<BYTE> buffer(blockSize, 0); // Using vector for automatic memory management
-	DWORD matchAddr = NULL;
+	QWORD matchAddr = 0;
 
 	// Move get pointer to the start of the block we want to search
 	file.seekg(startAddress, std::ios::beg);
@@ -103,43 +103,46 @@ DWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 	{
 		if (compareData(buffer.data() + i, byteMask, charMask))
 		{
-			DWORD checkRet;
+			QWORD checkRet = 0;
 			matchAddr = i;
 			if (typelen == 1) {
-				BYTE chechbyteRet = *reinterpret_cast<PBYTE>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-				checkRet = static_cast<DWORD>(chechbyteRet);
+				checkRet = *reinterpret_cast<PBYTE>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
 			}
 			else if (typelen == 2) {
-				WORD checkwordRet = *reinterpret_cast<PWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-				checkRet = static_cast<DWORD>(checkwordRet);
+				checkRet = *reinterpret_cast<PWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
+			}
+			else if (typelen == 8) {
+				checkRet = *reinterpret_cast<PQWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
 			}
 			else {
 				checkRet = *reinterpret_cast<PDWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
 			}
-			if (checkRet < 536870912)
+			// x64 EQ addresses are >= 4GB; x86 EQ addresses were < 512MB
+			if ((typelen >= 8 && checkRet >= 0x100000000ULL) || (typelen < 8 && checkRet < 536870912))
 				break;
 			else
-				matchAddr = NULL;
+				matchAddr = 0;
 		}
 	}
 
 	// Close the file before returning
 	file.close();
 
-	// If we didn't find a match, return NULL
-	if (matchAddr == NULL)
-		return NULL;
+	// If we didn't find a match, return 0
+	if (matchAddr == 0)
+		return 0;
 
-	DWORD nRet;
+	QWORD nRet;
 
 	// Find where our target address we're searching for is stored, and return its value.
 	if (typelen == 1) {
-		BYTE cRet = *reinterpret_cast<PBYTE>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-		nRet = static_cast<DWORD>(cRet);
+		nRet = *reinterpret_cast<PBYTE>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
 	}
 	else if (typelen == 2) {
-		WORD wRet = *reinterpret_cast<PWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
-		nRet = static_cast<DWORD>(wRet);
+		nRet = *reinterpret_cast<PWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
+	}
+	else if (typelen == 8) {
+		nRet = *reinterpret_cast<PQWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
 	}
 	else {
 		nRet = *reinterpret_cast<PDWORD>(buffer.data() + matchAddr + std::string(charMask).find_first_of("t"));
@@ -149,9 +152,9 @@ DWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 }
 
 
-DWORD EQGameScanner::findEQStructureOffset(DWORD startAddress, std::size_t blockSize, const PBYTE byteMask, const PCHAR charMask, const QWORD baseEQPointerAddress)
+QWORD EQGameScanner::findEQStructureOffset(DWORD startAddress, std::size_t blockSize, const PBYTE byteMask, const PCHAR charMask, const QWORD baseEQPointerAddress)
 {
-	DWORD nRet = 0;
+	QWORD nRet = 0;
 
 	std::string maskStr = charMask;
 
@@ -218,7 +221,7 @@ bool EQGameScanner::ScanExecutable(HWND hDlg, IniReaderInterface* ir_intf, Netwo
 
 	for (const auto& offset : offsets)
 	{
-		DWORD matchAddr = findAndProcessOffset(hDlg, offset.first, "Start", ir_intf, net_intf, outputStream, write_out);
+		QWORD matchAddr = findAndProcessOffset(hDlg, offset.first, "Start", ir_intf, net_intf, outputStream, write_out);
 		handleMatchResult(hDlg, matchAddr, net_intf, offset.second, offset.first, ir_intf, outputStream, write_out, reload);
 	}
 
@@ -252,20 +255,20 @@ void EQGameScanner::updateFileInfoSection(std::ostringstream& outputStream, IniR
 }
 
 
-DWORD EQGameScanner::findAndProcessOffset(HWND hDlg, const std::string& section, const std::string& entry, IniReaderInterface* ir_intf, NetworkServerInterface* net_intf, std::ostringstream& outputStream, bool write_out)
+QWORD EQGameScanner::findAndProcessOffset(HWND hDlg, const std::string& section, const std::string& entry, IniReaderInterface* ir_intf, NetworkServerInterface* net_intf, std::ostringstream& outputStream, bool write_out)
 {
-	QWORD mystart = ir_intf->readIntegerEntry(section.c_str(), entry.c_str(), true);
+	DWORD mystart = (DWORD)ir_intf->readIntegerEntry(section.c_str(), entry.c_str(), true);
 	std::string mypattern = ir_intf->readEscapeStrings(section.c_str(), "Pattern");
 	std::string mymask = ir_intf->readStringEntry(section.c_str(), "Mask", true);
 
-	DWORD matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
+	QWORD matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 	outputStream << section << "=0x" << std::hex << matchAddr;
 	return matchAddr;
 }
 
-void EQGameScanner::handleMatchResult(HWND hDlg, DWORD matchAddr, NetworkServerInterface* net_intf, int offsetType, const std::string& offsetName, IniReaderInterface* ir_intf, std::ostringstream& outputStream, bool write_out, bool& reload)
+void EQGameScanner::handleMatchResult(HWND hDlg, QWORD matchAddr, NetworkServerInterface* net_intf, int offsetType, const std::string& offsetName, IniReaderInterface* ir_intf, std::ostringstream& outputStream, bool write_out, bool& reload)
 {
-	if (matchAddr != NULL) {
+	if (matchAddr != 0) {
 		if (matchAddr == net_intf->current_offset(offsetType)) {
 			outputStream << " # Match\r\n";
 		}
@@ -301,7 +304,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	}
 
 	// We'll use this for comparisons
-	QWORD matchAddr = NULL;
+	QWORD matchAddr = 0;
 
 	std::ostringstream findResults;
 	std::ostringstream outputStream;
@@ -322,18 +325,18 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 
 	EQPrimaryOffsets::CharInfo = net_intf->current_offset((int)NetworkServer::OT_self);
 
-	QWORD mystart;
+	DWORD mystart;
 	string mypattern;
 	string mymask;
 
-	mystart = (QWORD)ir_intf->readIntegerEntry("CharInfo", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("CharInfo", "Start", true);
 	mypattern = ir_intf->readEscapeStrings("CharInfo", "Pattern");
 	mymask = ir_intf->readStringEntry("CharInfo", "Mask", true);
 
 	// CharInfo
 	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
-	if (matchAddr != NULL)
+	if (matchAddr != 0)
 	{
 		// If we match char info offset by pattern search use it
 		EQPrimaryOffsets::CharInfo = matchAddr;
@@ -348,14 +351,14 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = 0;
 
 	// SpawnInfo::NextOffset
-	mystart = (QWORD)ir_intf->readIntegerEntry("SpawnInfoNextOffset", "Start", true);
+	mystart = (DWORD)ir_intf->readIntegerEntry("SpawnInfoNextOffset", "Start", true);
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoNextOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoNextOffset", "Mask", true);
 
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "NextOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -368,7 +371,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "PrevOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -381,7 +384,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "LastnameOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -394,7 +397,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "XOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -407,7 +410,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "YOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -420,7 +423,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "ZOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -433,7 +436,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "SpeedOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -446,7 +449,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "HeadingOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -459,7 +462,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "NameOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -472,7 +475,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "TypeOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -485,7 +488,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "SpawnIDOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -498,7 +501,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "OwnerIDOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -511,7 +514,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "HideOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -524,7 +527,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "LevelOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -537,7 +540,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "RaceOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -550,7 +553,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "ClassOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -563,7 +566,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "PrimaryOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
@@ -576,7 +579,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
 
 	outputStream << "OffhandOffset" << ":" << "\r\n";
-	outputStream << "| Match Found @ " << ((matchAddr == NULL) ? "FALSE" : "TRUE") << "\r\n";
+	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
 
