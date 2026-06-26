@@ -155,6 +155,9 @@ QWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 
 	std::string maskStr(charMask);
 
+	if (maskStr.empty())
+		return 0;
+
 	// Detect RIP-relative mode: mask contains 'r' characters (4-byte displacement).
 	// In this mode we wildcard the displacement bytes and compute the resolved VA as:
 	//   IMAGE_BASE + fileOffsetToRVA(match_file_off + r_pos + 4) + (int32_t)disp32
@@ -169,6 +172,7 @@ QWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 	// Setup our temporary storage variables
 	std::vector<BYTE> buffer(blockSize, 0); // Using vector for automatic memory management
 	QWORD matchAddr = 0;
+	bool found = false;
 
 	// Move get pointer to the start of the block we want to search
 	file.seekg(startAddress, std::ios::beg);
@@ -193,7 +197,10 @@ QWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 				if (nextInstrRVA == 0) { matchAddr = 0; continue; }
 				QWORD resolvedVA = m_imageBase + nextInstrRVA + (int64_t)disp32;
 				if (resolvedVA >= 0x100000000ULL)
+				{
+					found = true;
 					break;
+				}
 			}
 			else
 			{
@@ -209,7 +216,10 @@ QWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 
 				// x64 EQ addresses are >= 4GB; x86 EQ addresses were < 512MB
 				if ((typelen >= 8 && checkRet >= 0x100000000ULL) || (typelen < 8 && checkRet < 536870912))
+				{
+					found = true;
 					break;
+				}
 			}
 
 			matchAddr = 0;
@@ -220,7 +230,7 @@ QWORD EQGameScanner::findEQPointerOffset(DWORD startAddress, std::size_t blockSi
 	file.close();
 
 	// If we didn't find a match, return 0
-	if (matchAddr == 0)
+	if (!found)
 		return 0;
 
 	// RIP-relative: compute IMAGE_BASE + rva(next_instr) + disp32
@@ -315,6 +325,19 @@ bool EQGameScanner::ScanExecutable(HWND hDlg, IniReaderInterface* ir_intf, Netwo
 		{"TargetAddr", NetworkServer::OT_target},
 		{"WorldAddr", NetworkServer::OT_world}
 	};
+
+	// Debug: dump INI read + PE parse results — prepended to final output
+	{
+		bool peOk = parsePESections();
+		findResults << "[Debug]\r\n";
+		findResults << "exe: " << executablePath << "\r\n";
+		findResults << "parsePE: " << (peOk ? "OK" : "FAIL") << "  imageBase=0x" << std::hex << m_imageBase << "  sections=" << std::dec << m_sections.size() << "\r\n";
+		DWORD zStart  = (DWORD)ir_intf->readIntegerEntry("ZoneAddr", "Start");
+		std::string zPat  = ir_intf->readEscapeStrings("ZoneAddr", "Pattern");
+		std::string zMask = ir_intf->readStringEntry("ZoneAddr", "Mask");
+		findResults << "ZoneAddr  start=0x" << std::hex << zStart << "  patLen=" << std::dec << zPat.length() << "  maskLen=" << zMask.length() << "\r\n";
+		findResults << "ZoneAddr  mask=[" << zMask << "]\r\n\r\n";
+	}
 
 	for (const auto& offset : offsets)
 	{
@@ -452,7 +475,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoNextOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoNextOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "NextOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -465,7 +488,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoPrevOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoPrevOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "PrevOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -478,7 +501,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoLastnameOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoLastnameOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "LastnameOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -491,7 +514,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoXOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoXOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "XOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -504,7 +527,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoYOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoYOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "YOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -517,7 +540,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoZOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoZOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "ZOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -530,7 +553,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoSpeedOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoSpeedOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "SpeedOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -543,7 +566,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoHeadingOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoHeadingOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "HeadingOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -556,7 +579,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoNameOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoNameOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "NameOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -569,7 +592,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoTypeOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoTypeOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "TypeOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -582,7 +605,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoSpawnIDOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoSpawnIDOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "SpawnIDOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -595,7 +618,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoOwnerIDOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoOwnerIDOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "OwnerIDOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -608,7 +631,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoHideOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoHideOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "HideOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -621,7 +644,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoLevelOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoLevelOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "LevelOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -634,7 +657,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoRaceOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoRaceOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "RaceOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -647,7 +670,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoClassOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoClassOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "ClassOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -660,7 +683,7 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoPrimaryOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoPrimaryOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "PrimaryOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
@@ -673,12 +696,38 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	mypattern = ir_intf->readEscapeStrings("SpawnInfoOffhandOffset", "Pattern");
 	mymask = ir_intf->readStringEntry("SpawnInfoOffhandOffset", "Mask");
 
-	matchAddr = findEQStructureOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str(), EQPrimaryOffsets::CharInfo);
+	matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
 
 	outputStream << "OffhandOffset" << ":" << "\r\n";
 	outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
 	outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
 	outputStream << "\r\n";
+
+	// WorldInfo offsets
+	outputStream << "WorldInfo Offsets\r\n";
+
+	struct { const char* label; const char* section; } worldOffsets[] = {
+		{ "WorldHourOffset",   "WorldInfoHourOffset"   },
+		{ "WorldMinuteOffset", "WorldInfoMinuteOffset" },
+		{ "WorldDayOffset",    "WorldInfoDayOffset"    },
+		{ "WorldMonthOffset",  "WorldInfoMonthOffset"  },
+		{ "WorldYearOffset",   "WorldInfoYearOffset"   },
+	};
+
+	for (const auto& wo : worldOffsets)
+	{
+		matchAddr = 0;
+		mystart   = (DWORD)ir_intf->readIntegerEntry(wo.section, "Start");
+		mypattern = ir_intf->readEscapeStrings(wo.section, "Pattern");
+		mymask    = ir_intf->readStringEntry(wo.section, "Mask");
+
+		matchAddr = findEQPointerOffset(mystart, 0x100000, (PBYTE)mypattern.c_str(), (PCHAR)mymask.c_str());
+
+		outputStream << wo.label << ":\r\n";
+		outputStream << "| Match Found @ " << ((matchAddr == 0) ? "FALSE" : "TRUE") << "\r\n";
+		outputStream << "| Offset -> 0x" << std::hex << matchAddr << "\r\n";
+		outputStream << "\r\n";
+	}
 
 	findResults << "\r\n";
 
@@ -686,4 +735,334 @@ void EQGameScanner::ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, Networ
 	SetDlgItemText(hDlg, IDC_EDIT2, v.c_str());
 
 	return;
+}
+
+// ---------------------------------------------------------------------------
+// FindAndWriteAllPatterns — pattern discovery helpers
+// ---------------------------------------------------------------------------
+
+static int fpCountMatches(const BYTE* textBuf, size_t textSize,
+                           const BYTE* pat, const char* mask, size_t patLen)
+{
+    if (textSize < patLen) return 0;
+    int count = 0;
+    for (size_t i = 0; i <= textSize - patLen; ++i)
+    {
+        bool ok = true;
+        for (size_t j = 0; j < patLen && ok; ++j)
+            if (mask[j] == 'x' && textBuf[i+j] != pat[j]) ok = false;
+        if (ok && ++count > 1) return count;
+    }
+    return count;
+}
+
+// Returns file offsets of the start of each 7-byte RIP-relative instruction
+// that resolves to targetVA.
+static std::vector<DWORD> fpFindRipRefs(
+    const BYTE* textBuf, size_t textSize, DWORD textRawOff, DWORD textVirtOff,
+    QWORD targetVA, QWORD imageBase)
+{
+    static const BYTE kRex[] = {0x44,0x45,0x48,0x49,0x4C,0x4D};
+    static const BYTE kOp[]  = {0x83,0x85,0x87,0x89,0x8B,0x8D,0x3B};
+    std::vector<DWORD> hits;
+    for (size_t i = 0; i + 7 <= textSize; ++i)
+    {
+        bool rex = false, op = false;
+        for (BYTE r : kRex) if (textBuf[i]   == r) { rex = true; break; }
+        if (!rex) continue;
+        for (BYTE o : kOp)  if (textBuf[i+1] == o) { op  = true; break; }
+        if (!op) continue;
+        if ((textBuf[i+2] & 0xC7) != 0x05) continue;
+        int32_t disp; memcpy(&disp, textBuf + i + 3, 4);
+        if ((QWORD)(imageBase + textVirtOff + i + 7) + (int64_t)disp == targetVA)
+            hits.push_back(textRawOff + (DWORD)i);
+    }
+    return hits;
+}
+
+// Returns file offsets of the displacement bytes in struct-access instructions.
+static std::vector<DWORD> fpFindStructAccesses(
+    const BYTE* textBuf, size_t textSize, DWORD textRawOff, DWORD offsetValue)
+{
+    std::vector<DWORD> hits;
+    if (offsetValue > 127)
+    {
+        BYTE tgt[4]; int32_t v = (int32_t)offsetValue; memcpy(tgt, &v, 4);
+        for (size_t i = 2; i + 4 <= textSize; ++i)
+        {
+            if (memcmp(textBuf + i, tgt, 4) != 0) continue;
+            BYTE prev = textBuf[i-1];
+            if ((prev & 0xC0) == 0x80 && (prev & 0x07) != 0x04 && (prev & 0x07) != 0x05)
+                hits.push_back(textRawOff + (DWORD)i);
+            else if ((prev & 0x07) == 0x04 && i >= 2 && (textBuf[i-2] & 0xC0) == 0x80)
+                hits.push_back(textRawOff + (DWORD)i);
+        }
+    }
+    else
+    {
+        for (size_t i = 1; i + 1 <= textSize; ++i)
+        {
+            if (textBuf[i] != (BYTE)offsetValue) continue;
+            BYTE prev = textBuf[i-1];
+            if ((prev & 0xC0) == 0x40 && (prev & 0x07) != 0x04)
+                hits.push_back(textRawOff + (DWORD)i);
+        }
+    }
+    return hits;
+}
+
+// Pick the hit with the fewest matches (ideally 1), build pattern, write to INI.
+// dispFileHits: file offsets of displacement start.
+// ctxBefore: exact-match bytes before displacement (includes instr prefix for primary).
+// dispMask: 'r' for RIP-relative primary, 't' for struct-offset secondary.
+static bool fpWritePattern(
+    const BYTE* exeData, size_t exeSize,
+    const BYTE* textBuf, size_t textSize, DWORD textRawOff,
+    const std::vector<DWORD>& dispFileHits,
+    int ctxBefore, int dispSize, int ctxAfter, char dispMask,
+    const std::string& section,
+    IniReaderInterface* ir_intf,
+    std::ostringstream& out)
+{
+    int patLen = ctxBefore + dispSize + ctxAfter;
+    std::string mask(ctxBefore, 'x');
+    mask += std::string(dispSize, dispMask);
+    mask += std::string(ctxAfter, 'x');
+
+    int bestCount = INT_MAX;
+    DWORD bestStart = 0;
+    std::vector<BYTE> bestPat;
+
+    for (DWORD dfo : dispFileHits)
+    {
+        if (dfo < (DWORD)ctxBefore) continue;
+        DWORD patStart = dfo - ctxBefore;
+        DWORD patEnd   = dfo + dispSize + ctxAfter;
+        if (patStart < textRawOff) continue;
+        if (patEnd > (DWORD)(textRawOff + textSize) || patEnd > (DWORD)exeSize) continue;
+
+        const BYTE* pat = exeData + patStart;
+        int cnt = fpCountMatches(textBuf, textSize, pat, mask.c_str(), patLen);
+        if (cnt > 0 && cnt < bestCount)
+        {
+            bestCount = cnt;
+            bestStart = patStart;
+            bestPat   = std::vector<BYTE>(pat, pat + patLen);
+        }
+        if (bestCount == 1) break;
+    }
+
+    if (bestPat.empty())
+    {
+        out << "  [!] No valid pattern found\r\n";
+        return false;
+    }
+
+    std::string patStr;
+    char hex[6];
+    for (int i = 0; i < patLen; ++i)
+    {
+        sprintf_s(hex, "\\x%02x", (unsigned)bestPat[i]);
+        patStr += hex;
+    }
+
+    char startStr[32];
+    sprintf_s(startStr, "0x%x", bestStart);
+
+    ir_intf->writeStringEntry(section, "Start",   startStr);
+    ir_intf->writeStringEntry(section, "Pattern", patStr);
+    ir_intf->writeStringEntry(section, "Mask",    mask);
+
+    out << "  count=" << std::dec << bestCount
+        << "  start=0x" << std::hex << bestStart;
+    out << (bestCount == 1 ? " [unique]\r\n" : " [WARNING: not unique]\r\n");
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// FindAndWriteAllPatterns — main entry point
+// ---------------------------------------------------------------------------
+
+bool EQGameScanner::FindAndWriteAllPatterns(HWND hDlg, IniReaderInterface* ir_intf, NetworkServerInterface* /*net_intf*/)
+{
+    if (!executableExists())
+    {
+        SetDlgItemText(hDlg, IDC_EDIT2, "Error: EXE path not set or file not found.");
+        return false;
+    }
+
+    std::ostringstream out;
+    out << "Loading EXE...\r\n";
+    SetDlgItemText(hDlg, IDC_EDIT2, out.str().c_str());
+    UpdateWindow(hDlg);
+
+    std::ifstream exeFile(executablePath.c_str(), std::ios::binary | std::ios::ate);
+    if (!exeFile)
+    {
+        SetDlgItemText(hDlg, IDC_EDIT2, "Error: Cannot open EXE file.");
+        return false;
+    }
+    size_t fileSize = (size_t)exeFile.tellg();
+    exeFile.seekg(0);
+    std::vector<BYTE> exeData(fileSize);
+    exeFile.read(reinterpret_cast<char*>(exeData.data()), fileSize);
+    exeFile.close();
+
+    out << "File: " << (fileSize / 1024 / 1024) << " MB\r\n";
+    SetDlgItemText(hDlg, IDC_EDIT2, out.str().c_str());
+    UpdateWindow(hDlg);
+
+    // Parse PE header to locate .text section
+    if (exeData.size() < 0x40 || memcmp(exeData.data(), "MZ", 2) != 0)
+    {
+        SetDlgItemText(hDlg, IDC_EDIT2, "Error: Not a valid PE file.");
+        return false;
+    }
+    DWORD peOff = *reinterpret_cast<DWORD*>(exeData.data() + 0x3C);
+    if (peOff + 24 > exeData.size() || memcmp(exeData.data() + peOff, "PE\0\0", 4) != 0)
+    {
+        SetDlgItemText(hDlg, IDC_EDIT2, "Error: PE signature not found.");
+        return false;
+    }
+    WORD  numSec   = *reinterpret_cast<WORD*> (exeData.data() + peOff + 6);
+    WORD  optHdrSz = *reinterpret_cast<WORD*> (exeData.data() + peOff + 20);
+    QWORD imgBase  = *reinterpret_cast<QWORD*>(exeData.data() + peOff + 24 + 24);
+    DWORD secTbl   = peOff + 24 + optHdrSz;
+
+    DWORD textRawOff = 0, textRawSz = 0, textVirtOff = 0;
+    for (WORD i = 0; i < numSec; ++i)
+    {
+        DWORD o = secTbl + i * 40;
+        if (o + 40 > (DWORD)exeData.size()) break;
+        if (memcmp(exeData.data() + o, ".text\0\0\0", 8) == 0)
+        {
+            textVirtOff = *reinterpret_cast<DWORD*>(exeData.data() + o + 12);
+            textRawSz   = *reinterpret_cast<DWORD*>(exeData.data() + o + 16);
+            textRawOff  = *reinterpret_cast<DWORD*>(exeData.data() + o + 20);
+            break;
+        }
+    }
+    if (textRawOff == 0)
+    {
+        SetDlgItemText(hDlg, IDC_EDIT2, "Error: .text section not found in PE.");
+        return false;
+    }
+
+    const BYTE* textBuf  = exeData.data() + textRawOff;
+    size_t      textSize = textRawSz;
+
+    out << "ImageBase: 0x" << std::hex << imgBase << "\r\n";
+    out << ".text: 0x" << textRawOff << "  (" << std::dec << textSize / 1024 << " KB)\r\n\r\n";
+    SetDlgItemText(hDlg, IDC_EDIT2, out.str().c_str());
+    UpdateWindow(hDlg);
+
+    int found = 0, total = 0;
+
+    // ---- Primary patterns (RIP-relative 7-byte instructions) ----
+    out << "[Primary Patterns]\r\n";
+    SetDlgItemText(hDlg, IDC_EDIT2, out.str().c_str());
+    UpdateWindow(hDlg);
+
+    struct { const char* memKey; const char* scanSec; } primaries[] = {
+        { "ZoneAddr",        "ZoneAddr"        },
+        { "SpawnHeaderAddr", "SpawnHeaderAddr" },
+        { "CharInfo",        "CharInfo"        },
+        { "TargetAddr",      "TargetAddr"      },
+        { "ItemsAddr",       "ItemsAddr"       },
+        { "WorldAddr",       "WorldAddr"       },
+    };
+    for (const auto& p : primaries)
+    {
+        ++total;
+        QWORD targetVA = ir_intf->readIntegerEntry("Memory Offsets", p.memKey);
+        out << p.memKey << " (VA=0x" << std::hex << targetVA << "):\r\n";
+        SetDlgItemText(hDlg, IDC_EDIT2, out.str().c_str());
+        UpdateWindow(hDlg);
+        if (targetVA == 0) { out << "  [!] No VA in [Memory Offsets]\r\n"; continue; }
+
+        auto refs = fpFindRipRefs(textBuf, textSize, textRawOff, textVirtOff, targetVA, imgBase);
+        out << "  " << std::dec << refs.size() << " RIP-ref(s)\r\n";
+
+        // disp32 starts 3 bytes into each 7-byte instruction; ctxBefore=11 = 8 pre + 3 prefix
+        std::vector<DWORD> dispHits;
+        for (DWORD instrOff : refs) dispHits.push_back(instrOff + 3);
+        if (fpWritePattern(exeData.data(), exeData.size(), textBuf, textSize, textRawOff,
+                           dispHits, 11, 4, 6, 'r', p.scanSec, ir_intf, out))
+            ++found;
+
+        SetDlgItemText(hDlg, IDC_EDIT2, out.str().c_str());
+        UpdateWindow(hDlg);
+    }
+    out << "\r\n";
+
+    // ---- SpawnInfo secondary patterns ----
+    out << "[SpawnInfo Patterns]\r\n";
+    SetDlgItemText(hDlg, IDC_EDIT2, out.str().c_str());
+    UpdateWindow(hDlg);
+
+    struct { const char* iniKey; const char* scanSec; } spawnInfo[] = {
+        { "NextOffset",     "SpawnInfoNextOffset"     },
+        { "PrevOffset",     "SpawnInfoPrevOffset"     },
+        { "LastnameOffset", "SpawnInfoLastnameOffset" },
+        { "XOffset",        "SpawnInfoXOffset"        },
+        { "YOffset",        "SpawnInfoYOffset"        },
+        { "ZOffset",        "SpawnInfoZOffset"        },
+        { "SpeedOffset",    "SpawnInfoSpeedOffset"    },
+        { "HeadingOffset",  "SpawnInfoHeadingOffset"  },
+        { "NameOffset",     "SpawnInfoNameOffset"     },
+        { "TypeOffset",     "SpawnInfoTypeOffset"     },
+        { "SpawnIDOffset",  "SpawnInfoSpawnIDOffset"  },
+        { "OwnerIDOffset",  "SpawnInfoOwnerIDOffset"  },
+        { "HideOffset",     "SpawnInfoHideOffset"     },
+        { "LevelOffset",    "SpawnInfoLevelOffset"    },
+        { "ClassOffset",    "SpawnInfoClassOffset"    },
+        { "RaceOffset",     "SpawnInfoRaceOffset"     },
+        { "PrimaryOffset",  "SpawnInfoPrimaryOffset"  },
+        { "OffhandOffset",  "SpawnInfoOffhandOffset"  },
+    };
+    for (const auto& s : spawnInfo)
+    {
+        ++total;
+        DWORD val = (DWORD)ir_intf->readIntegerEntry("SpawnInfo Offsets", s.iniKey);
+        bool  d32 = (val > 127);
+        out << s.iniKey << " (0x" << std::hex << val << "):\r\n";
+        auto hits = fpFindStructAccesses(textBuf, textSize, textRawOff, val);
+        out << "  " << std::dec << hits.size() << " candidate(s)\r\n";
+        if (fpWritePattern(exeData.data(), exeData.size(), textBuf, textSize, textRawOff,
+                           hits, d32 ? 8 : 14, d32 ? 4 : 1, d32 ? 6 : 8, 't',
+                           s.scanSec, ir_intf, out))
+            ++found;
+        SetDlgItemText(hDlg, IDC_EDIT2, out.str().c_str());
+        UpdateWindow(hDlg);
+    }
+    out << "\r\n";
+
+    // ---- WorldInfo patterns ----
+    out << "[WorldInfo Patterns]\r\n";
+    struct { const char* iniKey; const char* scanSec; } worldInfo[] = {
+        { "WorldHourOffset",   "WorldInfoHourOffset"   },
+        { "WorldMinuteOffset", "WorldInfoMinuteOffset" },
+        { "WorldDayOffset",    "WorldInfoDayOffset"    },
+        { "WorldMonthOffset",  "WorldInfoMonthOffset"  },
+        { "WorldYearOffset",   "WorldInfoYearOffset"   },
+    };
+    for (const auto& w : worldInfo)
+    {
+        ++total;
+        DWORD val = (DWORD)ir_intf->readIntegerEntry("WorldInfo Offsets", w.iniKey);
+        bool  d32 = (val > 127);
+        out << w.iniKey << " (0x" << std::hex << val << "):\r\n";
+        auto hits = fpFindStructAccesses(textBuf, textSize, textRawOff, val);
+        out << "  " << std::dec << hits.size() << " candidate(s)\r\n";
+        if (fpWritePattern(exeData.data(), exeData.size(), textBuf, textSize, textRawOff,
+                           hits, d32 ? 8 : 14, d32 ? 4 : 1, d32 ? 6 : 8, 't',
+                           w.scanSec, ir_intf, out))
+            ++found;
+        SetDlgItemText(hDlg, IDC_EDIT2, out.str().c_str());
+        UpdateWindow(hDlg);
+    }
+
+    out << "\r\nDone: " << std::dec << found << "/" << total << " patterns written.\r\n";
+    SetDlgItemText(hDlg, IDC_EDIT2, out.str().c_str());
+    return found > 0;
 }

@@ -42,6 +42,8 @@ public:
 
 	void ScanSecondary(HWND hDlg, IniReaderInterface* ir_intf, NetworkServerInterface* net_intf);
 
+	bool FindAndWriteAllPatterns(HWND hDlg, IniReaderInterface* ir_intf, NetworkServerInterface* net_intf);
+
 private:
 	struct PESection {
 		DWORD rawOff;

@@ -1076,6 +1076,10 @@ INT_PTR CALLBACK OffsetDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPa
 			scanner.setExe(eqFileName);
 			scanner.ScanSecondary(hDlg, &iniReader, &netServer);
 			break;
+		case IDC_BUTTON5:
+			scanner.setExe(eqFileName);
+			scanner.FindAndWriteAllPatterns(hDlg, &iniReader, &netServer);
+			break;
 		case IDCANCEL:
 			EndDialog(hDlg, IDCANCEL);
 			break;
