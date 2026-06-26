@@ -36,13 +36,32 @@ The server runs as a Win32/x64 GUI application (system tray) or as a Windows Ser
 - `IniReader iniReader` — parses `myseqserver.ini` for all memory offsets and port config
 - `NetworkServer netServer` — TCP listener/client socket + data serialization
 - `Debugger debugger` — debug CLI loop (spawned on a separate thread when run with `debug` arg)
-- `EQGameScanner scanner` — binary pattern scanner backing the Offset Finder dialog (Button 4)
+- `EQGameScanner scanner` — binary pattern scanner backing the Offset Finder dialog (`IDD_EQOFFSETSFINDER`)
 
 **Data flow (normal mode)**:
 1. Client connects → `FD_ACCEPT` → `openClientSocket()`
 2. Client sends a `RequestTypes` bitmask (see `Enums.cs` / `inc_packet_types` in `NetworkServer.h`)
 3. `FD_READ` → `processReceivedData()` → reads EQ memory via `MemReader` → serializes into `netBuffer_t` structs → sends back
 4. `FD_CLOSE` / disconnect → `closeClientSocket()`
+
+**Offset Finder dialog** (`IDD_EQOFFSETSFINDER`) — opened from the server tray menu:
+
+| Button | ID | Action |
+|--------|----|--------|
+| Find EQgame.exe | `IDC_BUTTON1` | Browse for / auto-locate `eqgame.exe` |
+| Scan Primary | `IDOK` | Run `ScanExecutable` — uses existing scanner patterns to resolve current primary VAs |
+| Scan Secondary | `IDC_BUTTON3` | Run `ScanSecondary` — uses existing scanner patterns to resolve struct member offsets |
+| Find Patterns | `IDC_BUTTON5` | Run `FindAndWriteAllPatterns` — reads current VAs/offsets from INI, scans the EXE binary, and auto-writes all 29 scanner patterns (6 primaries + 18 SpawnInfo + 5 WorldInfo) |
+| Write Offsets to ini file | `IDC_BUTTON2` | Re-run `ScanExecutable` with `write_out=true` to persist primary offsets into INI |
+
+**Scanner pattern format** — each of the 29 scanner sections in `myseqserver.ini` has three keys:
+- `Start` — hex file offset into `eqgame.exe` to begin the search window
+- `Pattern` — escaped byte sequence (e.g. `\x48\x8b\x05\x00\x00\x00\x00`) with wildcard bytes
+- `Mask` — character per byte: `x`=exact match, `r`=RIP-relative disp32 (extract + resolve), `t`=direct value extract (1 or 4 bytes), `?`=wildcard
+
+For **primary offsets** (`[ZoneAddr]` etc.), the mask is `xxxxxxxxxxxrrrrxxxxxx` (21 bytes): 8 pre-context + REX/op/ModRM (`xxx`) + disp32 (`rrrr`) + 6 post-context. `findEQPointerOffset` resolves the RIP-relative address as `IMAGE_BASE + fileOffsetToRVA(match + rPos + 4) + disp32`.
+
+For **secondary/WorldInfo offsets** (`[SpawnInfoNextOffset]`, `[WorldInfoHourOffset]` etc.), disp32 offsets (value > 127) use mask `xxxxxxxxttttxxxxxx` (18 bytes, `t`=4); disp8 offsets (value ≤ 127) use mask `xxxxxxxxxxxxxxxxxxxxxtxxxxxxxx` (23 bytes, `t`=1). `findEQPointerOffset` extracts the `t` bytes as the struct member offset.
 
 **Memory reading** (all offsets from `myseqserver.ini`):
 - Primary offsets (`[Memory Offsets]`): absolute addresses in the EQ process for ZoneAddr, SpawnHeaderAddr, CharInfo, TargetAddr, ItemsAddr, WorldAddr
@@ -134,6 +153,9 @@ A C# WinForms .NET 4.8 application. `Structures.cs` from the older codebase has 
 - `[SpawnInfo Offsets]`: ~18 byte offsets within the spawn struct
 - `[GroundItem Offsets]`: byte offsets within ground item structs
 - `[Port]`: TCP port (default 5555)
+- `[ZoneAddr]`, `[SpawnHeaderAddr]`, `[CharInfo]`, `[TargetAddr]`, `[ItemsAddr]`, `[WorldAddr]`: scanner patterns for the 6 primary offsets
+- `[SpawnInfoNextOffset]` … `[SpawnInfoOffhandOffset]`: scanner patterns for the 18 SpawnInfo struct member offsets
+- `[WorldInfoHourOffset]` … `[WorldInfoYearOffset]`: scanner patterns for the 5 WorldInfo struct member offsets
 
 Client user settings are stored via `Properties/Settings.settings` (accessed as `Settings.Default.*`).
 
@@ -143,4 +165,7 @@ Client user settings are stored via `Properties/Settings.settings` (accessed as 
 - **Admin privileges required**: The server calls `OpenProcess` with `PROCESS_VM_READ`, which requires elevation.
 - **Debug console is not pipeable**: The server's debug mode uses `AllocConsole()` + Windows Console API. External tools cannot drive it via stdin pipes — use the paste-based `offset_wizard.py` instead.
 - **Wire format alignment**: `Spawninfo.FromBytes()` and `netBuffer_t` must stay byte-for-byte aligned — both use `Pack=1` / `#pragma pack(1)`. Any field added to one must be added to the other.
-- **Offset updates required each EQ patch**: Use the Offset Finder dialog (server GUI → Button 4, calls `EQGameScanner::ScanExecutable`) or `offset_wizard.py` to locate new primary offsets.
+- **Offset updates required each EQ patch**: The typical workflow after a patch is:
+  1. Use `offset_wizard.py` (in `../offset_finder/`) or the debug server CLI to find the new primary VAs and update `[Memory Offsets]` and `[SpawnInfo Offsets]` / `[WorldInfo Offsets]` in the INI.
+  2. Click **Find Patterns** in the Offset Finder dialog (`FindAndWriteAllPatterns`) to regenerate all 29 scanner patterns from the updated VAs/offsets — this replaces the need to run `find_patterns.py` + `find_secondary_patterns.py` manually.
+  3. Verify with **Scan Primary** and **Scan Secondary** that all patterns resolve correctly.
